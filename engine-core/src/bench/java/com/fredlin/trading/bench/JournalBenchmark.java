@@ -10,7 +10,7 @@ import java.util.*;
 
 public final class JournalBenchmark {
     public static void main(String[] args) throws Exception {
-        var out = new StringBuilder("# 交易核心 · 日志策略\n\n| 策略 | 命令 | 批大小 | 命令/秒 |\n|---|---:|---:|---:|\n");
+        var out = new StringBuilder("# Trading core by journal policy\n\n| Policy | Commands | Batch size | Commands/s |\n|---|---:|---:|---:|\n");
         for (var policy : FileJournal.FsyncPolicy.values()) {
             int steps = policy == FileJournal.FsyncPolicy.EVERY_RECORD ? 4_000 : 80_000;
             int batch = policy == FileJournal.FsyncPolicy.GROUP ? 256 : 1;

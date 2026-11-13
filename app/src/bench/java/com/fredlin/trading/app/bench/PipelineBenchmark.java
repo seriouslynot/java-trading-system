@@ -19,7 +19,7 @@ public final class PipelineBenchmark {
 
     public static void main(String[] args) throws Exception {
         int count = args.length == 0 ? 4096 : Integer.parseInt(args[0]);
-        if (count < CLIENTS) throw new IllegalArgumentException("至少需要 " + CLIENTS + " 条命令");
+        if (count < CLIENTS) throw new IllegalArgumentException("At least " + CLIENTS + " commands are required");
         var orders = orders(count);
         var warmup = Arrays.copyOf(orders, CLIENTS);
         var stats = new EnumMap<FileJournal.FsyncPolicy, List<Stats>>(FileJournal.FsyncPolicy.class);
@@ -31,10 +31,10 @@ public final class PipelineBenchmark {
             var sequence = run % 2 == 0 ? POLICIES : POLICIES.reversed();
             for (var policy : sequence) stats.get(policy).add(run(policy, orders));
         }
-        var report = new StringBuilder("# 进程内接入层基准\n\n")
-                .append("512 个并发任务，同一条种子为 1 的输入序列。每个策略 3 次，交替顺序。")
-                .append("每轮用新的日志和演示账户。含排队、撮合、记账与落盘，排除 HTTP。\n\n")
-                .append("| 策略 | 轮次 | 命令 | 命令/秒 | P99 ms | 成功 | 业务拒绝 | 快速拒绝 | 超时 | 对账差异 |\n")
+        var report = new StringBuilder("# In-process order pipeline benchmark\n\n")
+                .append("512 concurrent workers used the same input sequence generated with seed 1. ")
+                .append("Each policy ran three times in alternating order, with a fresh journal and seeded accounts for each run. The benchmark includes queueing, matching, accounting, and journal persistence. It excludes HTTP.\n\n")
+                .append("| Policy | Run | Commands | Commands/s | P99 (ms) | Successful | Business rejections | Fast rejections | Timeouts | Reconciliation differences |\n")
                 .append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n");
         for (var policy : POLICIES) {
             int i = 0;
@@ -44,7 +44,7 @@ public final class PipelineBenchmark {
                         s.fastRejects(), s.timeouts(), s.anomalies()));
             }
         }
-        report.append("\n| 策略 | 命令/秒中位数 | P99 ms 中位数 |\n|---|---:|---:|\n");
+        report.append("\n| Policy | Median commands/s | Median P99 (ms) |\n|---|---:|---:|\n");
         for (var policy : POLICIES) {
             var samples = stats.get(policy);
             double rate = median(samples.stream().mapToDouble(Stats::rate).toArray());

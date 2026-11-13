@@ -9,14 +9,14 @@ public final class RegimeBenchmark {
     public static void main(String[] args) throws Exception {
         int steps = args.length == 0 ? 300_000 : Integer.parseInt(args[0]);
         var p = MarketWorkload.Parameters.standard(steps);
-        var out = new StringBuilder("# 撮合引擎 · 分行情\n\n")
-                .append("| 行情 | 命令 | 3 次测量中位数 ns/命令 |\n|---|---:|---:|\n");
+        var out = new StringBuilder("# Matching engine by market regime\n\n")
+                .append("| Market regime | Commands | Median ns per command (three runs) |\n|---|---:|---:|\n");
         for (var regime : MarketRegime.values()) {
             var commands = MarketWorkload.generate(regime, p, 1);
             run(commands);
             long[] times = {run(commands), run(commands), run(commands)};
             Arrays.sort(times);
-            out.append(String.format(Locale.ROOT, "| %s | %d | %.0f |%n", regime.label(), steps, times[1] / (double)steps));
+            out.append(String.format(Locale.ROOT, "| %s | %d | %.0f |%n", regime.name(), steps, times[1] / (double)steps));
         }
         report("regime", out);
     }

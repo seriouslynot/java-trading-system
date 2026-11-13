@@ -1,27 +1,31 @@
-# Java 交易实验台
+# Java Trading System
 
-单交易对（默认 `DEMO`）限价交易演示。Java 21 和 Gradle 9.9.1，后端使用 Spring Boot 4.1.2，页面使用 React、TypeScript 和 Vite。
+A single-symbol limit-order trading system built with Java 21, Spring Boot, and React. It matches orders by price and time, settles trades in a double-entry ledger, and rebuilds state by replaying its journal.
 
-这是原版交易系统的公开复刻。原版在公司电脑上开发了约两到三个月，当前仓库记录 2026-11-13 的复刻与验证。[开发时间线 / Development timeline](docs/development-timeline.md)
+In a local benchmark with 512 concurrent workers and 4,096 orders per run, group commit raised median throughput from 254 to 45,419 orders per second and reduced median request P99 from 2,167.51 ms to 15.35 ms. The benchmark calls the admission layer directly and excludes HTTP. A separate SIGKILL drill recovered all 64 acknowledged orders, with no additional orders on retry and zero reconciliation differences. [Benchmark results](docs/portfolio/benchmark.md) · [Crash drill output](docs/portfolio/crash-recovery.json)
 
-A single-symbol limit-order trading system in Java 21 with a Spring Boot API and a React dashboard. The [benchmark](docs/portfolio/benchmark.md) and [crash recovery drill](docs/portfolio/crash-recovery.json) document group commit and journal replay.
+The original project took approximately two to three months to develop. This repository records the public reconstruction and verification on November 13, 2026. [Development timeline](docs/development-timeline.md)
 
-- `engine-core`：纯 Java 撮合、IOC、改单、冻结和结算、CRC32 日志、重放、逐笔对账、负载生成和运营组件。
-- `app`：REST、幂等、限流、有界队列、撤单优先、单线程撮合和组提交。HTTP 请求在日志落盘后得到结果；行情从已提交的只读快照获取。
-- `frontend`：交易看板、账本与对账、运营台，每秒轮询。
-- `docs/验收记录.md`：本机实测、与原版的差异和未验证项。
+## Architecture
 
-## 运行
+- `engine-core` implements price-time matching, immediate-or-cancel orders, amendments, cash and inventory reservations, settlement, reconciliation, and journal replay in pure Java.
+- `app` provides the REST API, idempotency, rate limiting, and a bounded queue with optional cancel priority. One engine thread owns the order book and ledger. With group commit enabled, it forces the journal before acknowledging orders and publishing updated read snapshots.
+- `frontend` provides trading, ledger and reconciliation, and operations dashboards. It polls the read APIs once per second.
 
-随交付提供的 JAR 已包含前端，用 JDK 21 启动即可：
+## Build and run
+
+Use JDK 21. Building the dashboard also requires Node.js and npm. On Windows, use `gradlew.bat` in place of `./gradlew`.
+
+On macOS or Linux, build the dashboard and executable JAR together:
 
 ```sh
-java -jar trading-system.jar --server.address=127.0.0.1
+./scripts/build-bundle.sh
+java -jar app/build/libs/app-0.1.0-SNAPSHOT.jar --server.address=127.0.0.1
 ```
 
-访问 <http://localhost:8080>。默认日志位于启动目录下的 `data/journal.log`。首次启动给 A、B、C、D 和 S01–S20 发放演示余额。要另开一套数据，使用 `--trading.journal-path=data/another.log`。管理操作可通过 `TRADING_ADMIN_TOKEN` 设置口令，在浏览器顶部「管理口令」输入。
+Open <http://localhost:8080>. The first run seeds accounts A, B, C, D, and S01–S20. The journal defaults to `data/journal.log` relative to the launch directory. Use `--trading.journal-path=data/another.log` to start with a separate journal. If `TRADING_ADMIN_TOKEN` is set, supply it through the dashboard's admin token control or the `X-Admin-Token` request header.
 
-可试一次部分成交：A 以 100.00 卖 5 股，再用 B 以 100.00 买 3 股，最后用 A 撤掉剩余 2 股。账本页可运行对账。REST 价格用整数分，例如 100.00 写成 10000。
+For a partial fill, submit a sell order for five shares at 100.00 as A and a buy order for three shares at the same price as B. Then cancel A's remaining two shares. The REST API represents prices in integer cents.
 
 ```sh
 curl http://localhost:8080/actuator/health
@@ -31,16 +35,11 @@ curl -X POST http://localhost:8080/api/orders \
 curl -X POST http://localhost:8080/api/recon/run
 ```
 
-## 从源码构建
-
-需要 JDK 21，前端建议 Node.js 24、npm 11。Windows 使用 `gradlew.bat`。
+For frontend development, run the API and Vite separately:
 
 ```sh
-./gradlew build
 ./gradlew :app:bootRun
 ```
-
-另开一个终端，从仓库根目录启动开发页面：
 
 ```sh
 cd frontend
@@ -48,18 +47,21 @@ npm ci
 npm run dev -- --port 5173
 ```
 
-访问 <http://localhost:5173>，Vite 代理后端请求。要重新生成带页面的 JAR，macOS/Linux 下运行 `./scripts/build-bundle.sh`；或运行 `npm run build` 后把 `frontend/dist/` 的内容复制到 `app/src/main/resources/static/`，再运行 `./gradlew :app:bootJar`。产物在 `app/build/libs/app-0.1.0-SNAPSHOT.jar`。
+Open <http://localhost:5173>. Vite proxies API requests to the backend.
+
+## Verification and benchmarks
 
 ```sh
+./gradlew build
 ./gradlew :engine-core:regimeBench
 ./gradlew :engine-core:journalBench
 ./gradlew :app:pipelineBench -PpipelineCommands=4096
 python3 scripts/crash-recovery.py
 ```
 
-报告写到对应模块的 `build/bench/`。`docs/portfolio/` 保存同口径基准及 SIGKILL 恢复演练的实测输出。核心落盘策略可用 `--trading.journal-fsync=EVERY_RECORD` 或 `OS_DEFAULT` 切换，默认 `GROUP`。默认每批最多 256 条、队列 2000、接入等待 2000 ms。
+The benchmarks write reports under each module's `build/bench/` directory. The default journal policy is `GROUP`, with up to 256 commands per batch. Use `--trading.journal-fsync=EVERY_RECORD` to force each record or `OS_DEFAULT` to rely on operating-system buffering. The default queue capacity is 2,000, and the default request timeout is 2,000 ms. [Verification report](docs/verification.md)
 
-## 容器
+## Container
 
 ```sh
 docker build -t trading-system .
@@ -67,8 +69,8 @@ docker volume create trading-data
 docker run --rm -p 127.0.0.1:8080:8080 -v trading-data:/data trading-system
 ```
 
-容器构建文件包含前端和 Java 后端，运行用户为 10001。HTTP 外部压测脚本：`k6 run scripts/loadtest/orders.js`。本机未运行 Docker 或 k6。
+The image bundles the API and dashboard and runs as user 10001. The external HTTP load-test script is `k6 run scripts/loadtest/orders.js`. Docker and k6 were not exercised in the recorded local run.
 
-## 复刻边界
+## Reconstruction scope
 
-实现依据是用户提供的四份 prompt。原版源码、规则 ADR 和指纹序列化未提供，故此处的生成器和指纹代码为独立实现。8 个本地回归指纹用于锁定当前版本行为；不能用来替代原版的 8 个 SHA-256。IOC 和改单按原版所述只提供核心 Java 接口。页面按文字需求重建，原版视觉参考未提供。
+The implementation follows four supplied project briefs. The original source, architecture decision records, and fingerprint serialization code were unavailable. The eight regression fingerprints in this repository establish a baseline for this implementation. Matching the original fingerprints remains unverified. Immediate-or-cancel and amendment are available through the core Java interface. The dashboard was rebuilt from the written requirements.
