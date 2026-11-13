@@ -1,0 +1,10 @@
+{
+  "strategy": "GROUP",
+  "workers": 16,
+  "acknowledged": 64,
+  "recovered": 64,
+  "idempotentRetries": 64,
+  "journalRecords": 88,
+  "reconciliationAnomalies": 0,
+  "restartToReadyMs": 1895
+}

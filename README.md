@@ -49,10 +49,11 @@ npm run dev -- --port 5173
 ```sh
 ./gradlew :engine-core:regimeBench
 ./gradlew :engine-core:journalBench
-./gradlew :app:pipelineBench
+./gradlew :app:pipelineBench -PpipelineCommands=4096
+python3 scripts/crash-recovery.py
 ```
 
-报告写到对应模块的 `build/bench/`。核心落盘策略可用 `--trading.journal-fsync=EVERY_RECORD` 或 `OS_DEFAULT` 切换，默认 `GROUP`。默认每批最多 256 条、队列 2000、接入等待 2000 ms。
+报告写到对应模块的 `build/bench/`。`docs/portfolio/` 保存同口径基准及 SIGKILL 恢复演练的实测输出。核心落盘策略可用 `--trading.journal-fsync=EVERY_RECORD` 或 `OS_DEFAULT` 切换，默认 `GROUP`。默认每批最多 256 条、队列 2000、接入等待 2000 ms。
 
 ## 容器
 
