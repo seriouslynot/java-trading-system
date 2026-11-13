@@ -1,0 +1,9 @@
+.git
+**/.gradle
+**/build
+**/node_modules
+**/data
+frontend/dist
+**/*.tsbuildinfo
+app/src/main/resources/static
+.DS_Store
