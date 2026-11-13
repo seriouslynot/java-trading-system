@@ -2,6 +2,10 @@
 
 单交易对（默认 `DEMO`）限价交易演示。Java 21 和 Gradle 9.9.1，后端使用 Spring Boot 4.1.2，页面使用 React、TypeScript 和 Vite。
 
+这是原版交易系统的公开复刻。原版在公司电脑上开发了约两到三个月，当前仓库记录 2026-11-13 的复刻与验证。[开发时间线 / Development timeline](docs/development-timeline.md)
+
+A single-symbol limit-order trading system in Java 21 with a Spring Boot API and a React dashboard. The [benchmark](docs/portfolio/benchmark.md) and [crash recovery drill](docs/portfolio/crash-recovery.json) document group commit and journal replay.
+
 - `engine-core`：纯 Java 撮合、IOC、改单、冻结和结算、CRC32 日志、重放、逐笔对账、负载生成和运营组件。
 - `app`：REST、幂等、限流、有界队列、撤单优先、单线程撮合和组提交。HTTP 请求在日志落盘后得到结果；行情从已提交的只读快照获取。
 - `frontend`：交易看板、账本与对账、运营台，每秒轮询。
