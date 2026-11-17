@@ -11,6 +11,7 @@ public final class AnomalyInjector implements PostingSink {
     private final Random random;
     private final List<Injection> manifest = new ArrayList<>();
     private String lastTrade;
+    private AnomalyType activeFault;
     private volatile double rate;
 
     public AnomalyInjector(PostingSink target, double rate, long seed) {
@@ -19,18 +20,22 @@ public final class AnomalyInjector implements PostingSink {
         setRate(rate);
     }
     public void accept(Posting p) {
-        if (!p.isTrade() || p.reference().equals(lastTrade)) {
+        if (!p.isTrade()) {
             target.accept(p);
             return;
         }
-        lastTrade = p.reference();
-        if (rate == 0 || random.nextDouble() >= rate) {
+        if (!p.reference().equals(lastTrade)) {
+            lastTrade = p.reference();
+            double probability = rate;
+            activeFault = probability > 0 && random.nextDouble() < probability
+                    ? TYPES[random.nextInt(TYPES.length)] : null;
+            if (activeFault != null) manifest.add(new Injection(p.reference(), activeFault));
+        }
+        if (activeFault == null) {
             target.accept(p);
             return;
         }
-        var type = TYPES[random.nextInt(TYPES.length)];
-        manifest.add(new Injection(p.reference(), type));
-        switch (type) {
+        switch (activeFault) {
             case DUPLICATE -> { target.accept(p); target.accept(p); }
             case MISSING -> {}
             case AMOUNT_MISMATCH -> target.accept(p.withAmount(p.amount() + Long.signum(p.amount())));

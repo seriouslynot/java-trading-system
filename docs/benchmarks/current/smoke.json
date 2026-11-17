@@ -1,0 +1,30 @@
+{
+  "actualPostings": 10936,
+  "commands": 5000,
+  "differences": 76,
+  "expectedPostings": 10940,
+  "health": "UP",
+  "homepageStatus": 200,
+  "score": {
+    "balanceAnomalies": 0,
+    "detected": 19,
+    "detectedByType": {
+      "AMOUNT_MISMATCH": 4,
+      "DUPLICATE": 4,
+      "MISSING": 5,
+      "SIDE_MISMATCH": 6
+    },
+    "falsePositives": 0,
+    "injected": 19,
+    "injectedByType": {
+      "AMOUNT_MISMATCH": 4,
+      "DUPLICATE": 4,
+      "MISSING": 5,
+      "SIDE_MISMATCH": 6
+    },
+    "missed": 0,
+    "precision": 1.0,
+    "recall": 1.0
+  },
+  "trades": 2715
+}

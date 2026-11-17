@@ -5,6 +5,6 @@ public record OrderView(long orderId, String clientId, String clientOrderId, Str
                         long cancelledQuantity, long sequence, OrderStatus status) {
     static OrderView rejected(long id, NewOrder c, long seq) {
         return new OrderView(id, c.clientId(), c.clientOrderId(), c.symbol(), c.side(),
-                c.price(), c.quantity(), 0, 0, c.quantity(), seq, OrderStatus.REJECTED);
+                c.price(), c.quantity(), 0, 0, 0, seq, OrderStatus.REJECTED);
     }
 }

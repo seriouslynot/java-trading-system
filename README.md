@@ -1,8 +1,8 @@
 # Java Trading System
 
-A single-symbol limit-order trading system built with Java 21, Spring Boot, and React. It matches orders by price and time, settles trades in a double-entry ledger, and rebuilds state by replaying its journal.
+A single-symbol limit-order trading system independently rebuilt from a requirements prompt using Java 21, Spring Boot, and React. It matches orders by price and time, settles trades in a double-entry ledger, and rebuilds state by replaying its journal.
 
-In a local benchmark with 512 concurrent workers and 4,096 orders per run, group commit raised median throughput from 254 to 45,419 orders per second and reduced median request P99 from 2,167.51 ms to 15.35 ms. The benchmark calls the admission layer directly and excludes HTTP. A separate SIGKILL drill recovered all 64 acknowledged orders, with no additional orders on retry and zero reconciliation differences. [Benchmark results](docs/portfolio/benchmark.md) · [Crash drill output](docs/portfolio/crash-recovery.json)
+The verification suite covers matching scenarios, seeded invariants, direct comparison of two engines running the same commands, journal recovery, and event-level reconciliation. [Behavioral verification](docs/verification.md) · [Prompt requirements and changes](docs/prompt-gap-analysis-and-fixes.md)
 
 The original project took approximately two to three months to develop. This repository records the public reconstruction and verification on November 13, 2026. [Development timeline](docs/development-timeline.md)
 
@@ -52,14 +52,16 @@ Open <http://localhost:5173>. Vite proxies API requests to the backend.
 ## Verification and benchmarks
 
 ```sh
-./gradlew build
+./gradlew clean check
 ./gradlew :engine-core:regimeBench
 ./gradlew :engine-core:journalBench
-./gradlew :app:pipelineBench -PpipelineCommands=4096
+./gradlew :app:pipelineBench -PpipelineWarmupSeconds=3 -PpipelineMeasureSeconds=10
+./gradlew :app:bootJar
 python3 scripts/crash-recovery.py
 ```
 
-The benchmarks write reports under each module's `build/bench/` directory. The default journal policy is `GROUP`, with up to 256 commands per batch. Use `--trading.journal-fsync=EVERY_RECORD` to force each record or `OS_DEFAULT` to rely on operating-system buffering. The default queue capacity is 2,000, and the default request timeout is 2,000 ms. [Verification report](docs/verification.md)
+The benchmarks write reports under each module's `build/bench/` directory.
+`regimeBench` measures the standalone matching engine. `journalBench` measures the core with matching, accounting, and journal persistence. `pipelineBench` measures the in-process admission path under 512 concurrent workers. These numbers exclude HTTP. [Current reports](docs/benchmarks/current) · [Baseline reports](docs/benchmarks/baseline) The default journal policy is `GROUP`, with up to 256 commands per batch. Use `--trading.journal-fsync=EVERY_RECORD` to force each record or `OS_DEFAULT` to rely on operating-system buffering. The default queue capacity is 2,000, and the default request timeout is 2,000 ms. [Verification report](docs/verification.md)
 
 ## Container
 
@@ -73,4 +75,11 @@ The image bundles the API and dashboard and runs as user 10001. The external HTT
 
 ## Reconstruction scope
 
-The implementation follows four supplied project briefs. The original source, architecture decision records, and fingerprint serialization code were unavailable. The eight regression fingerprints in this repository establish a baseline for this implementation. Matching the original fingerprints remains unverified. Immediate-or-cancel and amendment are available through the core Java interface. The dashboard was rebuilt from the written requirements.
+The current project follows the supplied requirements and interface specification. It verifies
+determinism by comparing order, cancel and modify results from two engines given the
+same input, then comparing their final books. Scenario and invariant tests separately
+check correctness. IOC and amendment are available through the core Java interface.
+
+External HTTP load testing with k6, Docker execution, and AWS deployment remain
+unverified. The journal is a single local file. The project has no primary/replica
+failover or cross-region recovery. [Known limits](docs/verification.md#known-limits)

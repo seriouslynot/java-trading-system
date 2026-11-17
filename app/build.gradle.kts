@@ -26,7 +26,8 @@ val bench = sourceSets.create("bench") {
 tasks.register<JavaExec>("pipelineBench") {
     classpath = bench.runtimeClasspath
     mainClass.set("com.fredlin.trading.app.bench.PipelineBenchmark")
-    args(providers.gradleProperty("pipelineCommands").getOrElse("4096"))
+    args(providers.gradleProperty("pipelineWarmupSeconds").getOrElse("3"),
+        providers.gradleProperty("pipelineMeasureSeconds").getOrElse("10"))
     jvmArgs("-Dstdout.encoding=UTF-8")
 }
 tasks.check { dependsOn(bench.classesTaskName) }

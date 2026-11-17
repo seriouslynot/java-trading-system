@@ -4,6 +4,7 @@ import com.fredlin.trading.engine.*;
 import com.fredlin.trading.journal.*;
 import com.fredlin.trading.ledger.*;
 import java.util.*;
+import java.util.function.BiConsumer;
 
 public final class TradingCore {
     private final Journal journal;
@@ -18,6 +19,12 @@ public final class TradingCore {
         engine = new MatchingEngine(symbol, ledger);
     }
     public static RecoveryResult recover(String symbol, Journal journal, PostingSink sink) {
+        return recover(symbol, journal, sink, (core, record) -> {});
+    }
+
+    /** Calls the observer after each record has been replayed and checked. */
+    public static RecoveryResult recover(String symbol, Journal journal, PostingSink sink,
+                                         BiConsumer<TradingCore, JournalRecord> replayed) {
         var core = new TradingCore(symbol, journal, sink);
         var records = journal.readAll();
         for (var record : records) {
@@ -41,6 +48,7 @@ public final class TradingCore {
                     }
                 };
                 if (!matches) throw new IllegalStateException("重放结果和日志不一致");
+                replayed.accept(core, record);
             } catch (RuntimeException ex) {
                 throw new JournalCorruptedException("日志第 " + record.seq() + " 条重放失败", ex);
             }

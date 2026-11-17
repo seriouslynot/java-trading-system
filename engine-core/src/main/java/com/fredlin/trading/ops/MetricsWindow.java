@@ -14,9 +14,9 @@ public final class MetricsWindow {
         int length, depth, capacity, anomalies;
         SecondStats cached;
         Bucket(long second) { this.second = second; }
-        void add(Outcome outcome, long nanos) {
+        void add(Outcome outcome, long nanos, boolean queued) {
             counts[outcome.ordinal()]++;
-            if (outcome != Outcome.RATE_LIMITED && outcome != Outcome.QUEUE_FULL) {
+            if (queued) {
                 if (length == latencies.length) latencies = Arrays.copyOf(latencies, Math.max(128, length * 2));
                 latencies[length++] = Math.max(0, nanos);
             }
@@ -40,7 +40,10 @@ public final class MetricsWindow {
         this.clock = clock;
     }
     public synchronized void record(Outcome outcome, long latencyNanos) {
-        current().add(outcome, latencyNanos);
+        record(outcome, latencyNanos, outcome != Outcome.RATE_LIMITED && outcome != Outcome.QUEUE_FULL);
+    }
+    public synchronized void record(Outcome outcome, long latencyNanos, boolean queued) {
+        current().add(outcome, latencyNanos, queued);
     }
     public synchronized void sampleGauges(int depth, int capacity, int anomalies) {
         this.depth = depth; this.capacity = capacity; this.anomalies = anomalies;

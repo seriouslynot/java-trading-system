@@ -1,4 +1,6 @@
-# In-process order pipeline benchmark
+# Historical in-process order pipeline benchmark
+
+This November 13 run used the earlier orders-only workload and a fixed count per round. Reproduce it at commit `7c38618`. The current benchmark uses time windows with mixed place/cancel traffic. [Current reports](../benchmarks/current)
 
 512 concurrent workers used the same input sequence generated with seed 1. Each policy ran three times in alternating order, with a fresh journal and seeded accounts for each run. The benchmark includes queueing, matching, accounting, and journal persistence. It excludes HTTP.
 

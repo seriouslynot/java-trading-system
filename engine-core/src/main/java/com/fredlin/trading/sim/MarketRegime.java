@@ -27,7 +27,8 @@ public enum MarketRegime {
             case CRASH -> {
                 if (u <= 0.30 || u >= 0.60) yield 1;
                 if (u <= 0.32) yield 1 - amplitude * (u - 0.30) / 0.02;
-                yield 1 - amplitude * (0.60 - u) / 0.28;
+                if (u <= 0.35) yield 1 - amplitude;
+                yield 1 - amplitude * (0.60 - u) / 0.25;
             }
         };
     }

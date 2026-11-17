@@ -17,7 +17,7 @@ public record OrderGenerator(String symbol, List<String> clients, long midPrice,
         String client = clients.get(random.nextInt(clients.size()));
         Side side = random.nextBoolean() ? Side.BUY : Side.SELL;
         long price = Math.clamp(midPrice + random.nextInt(2 * spreadTicks + 1) - spreadTicks, 1, EngineLimits.MAX_PRICE);
-        long quantity = random.nextInt(100) < largeOrderPct ? 101 + random.nextInt(900) : 1 + random.nextInt(100);
+        long quantity = random.nextInt(100) < largeOrderPct ? 500 + random.nextInt(1501) : 1 + random.nextInt(100);
         return NewOrder.limit(client, symbol, side, price, quantity);
     }
     public static List<String> clientIds(String prefix, int count) {

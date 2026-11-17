@@ -59,6 +59,8 @@ def drill(java, jar, port):
 
             with ThreadPoolExecutor(max_workers=16) as pool:
                 acknowledged = list(pool.map(place, range(64)))
+            committed = {order["orderId"]: request(f"/api/orders/{order['orderId']}")
+                         for _, order in acknowledged}
             accounts = request("/api/accounts")
             process.kill()
             if process.wait(timeout=10) != -signal.SIGKILL:
@@ -77,9 +79,9 @@ def drill(java, jar, port):
                 raise RuntimeError("Acknowledged orders share an ID")
             for payload, order in acknowledged:
                 replayed = request("/api/orders", payload, "POST")
-                if not replayed["duplicate"] or replayed["order"] != order:
-                    raise RuntimeError(f"Original order was not recovered: {order['orderId']}")
-                if request(f"/api/orders/{order['orderId']}")["orderId"] != order["orderId"]:
+                if not replayed["duplicate"] or replayed["order"] != committed[order["orderId"]]:
+                    raise RuntimeError(f"Committed order was not recovered: {order['orderId']}")
+                if request(f"/api/orders/{order['orderId']}") != committed[order["orderId"]]:
                     raise RuntimeError(f"Recovered order cannot be queried: {order['orderId']}")
             if request("/api/accounts") != accounts:
                 raise RuntimeError("Account balances changed after recovery")

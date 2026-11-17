@@ -65,34 +65,13 @@ public final class EngineService implements AutoCloseable {
         bucket = new TokenBucket(props.rateLimitBurst(), props.rateLimitPerSecond());
         journal = new FileJournal(props.journalPath(), props.journalFsync());
         try {
-            var recovery = TradingCore.recover(props.symbol(), journal, injector);
+            var recovery = TradingCore.recover(props.symbol(), journal, injector, this::onReplay);
             core = recovery.core();
             if (recovery.records().isEmpty() && props.seedDemoAccounts()) {
                 for (var client : demoAccounts()) core.deposit(client, ReconExperiment.CASH_PER_ACCOUNT,
                         ReconExperiment.POSITION_PER_ACCOUNT);
                 core.flush();
             }
-            long engineSequence = 0;
-            for (var record : recovery.records()) {
-                if (!(record instanceof JournalRecord.Deposit)) engineSequence++;
-                switch (record) {
-                    case JournalRecord.Place p -> {
-                        rememberTrades(p.trades());
-                        updateOrder(p.orderId());
-                        var key = key(p.command());
-                        if (key != null) {
-                            ids.restore(key, p.orderId());
-                            var c = p.command();
-                            var view = restoredView(p, c, engineSequence);
-                            cacheOriginal(new PlaceResult(view, p.trades(), p.reason()));
-                        }
-                    }
-                    case JournalRecord.Modify m -> rememberTrades(m.trades());
-                    default -> {}
-                }
-            }
-            core.openOrders(Side.BUY).forEach(o -> orders.put(o.orderId(), o));
-            core.openOrders(Side.SELL).forEach(o -> orders.put(o.orderId(), o));
             publish();
             LOG.info("恢复完成：{} 条记录，丢弃半行 {} 条", recovery.records().size(), recovery.discardedLines());
         } catch (RuntimeException ex) {
@@ -103,12 +82,27 @@ public final class EngineService implements AutoCloseable {
         sampler = Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon().name("ops-sampler").factory());
         sampler.scheduleAtFixedRate(this::sample, 0, 1, TimeUnit.SECONDS);
     }
-    private static OrderView restoredView(JournalRecord.Place p, NewOrder c, long sequence) {
-        long filled = p.trades().stream().mapToLong(Trade::quantity).sum();
-        long remaining = p.status().isTerminal() ? 0 : c.quantity() - filled;
-        return new OrderView(p.orderId(), c.clientId(), c.clientOrderId(), c.symbol(), c.side(), c.price(),
-                c.quantity(), filled, remaining, c.quantity() - filled - remaining, sequence, p.status());
+    private void onReplay(TradingCore replay, JournalRecord record) {
+        switch (record) {
+            case JournalRecord.Place place -> {
+                updateOrder(replay, place.orderId());
+                updateTrades(replay, place.trades());
+                var key = key(place.command());
+                if (key != null) {
+                    var view = replay.order(place.orderId()).orElseThrow();
+                    cacheOriginal(new PlaceResult(view, place.trades(), place.reason()));
+                    ids.restore(key, place.orderId());
+                }
+            }
+            case JournalRecord.Cancel cancel -> updateOrder(replay, cancel.orderId());
+            case JournalRecord.Modify modify -> {
+                updateOrder(replay, modify.orderId());
+                updateTrades(replay, modify.trades());
+            }
+            case JournalRecord.Deposit ignored -> {}
+        }
     }
+
     public static List<String> demoAccounts() {
         var clients = new ArrayList<>(List.of("A", "B", "C", "D"));
         clients.addAll(OrderGenerator.clientIds("S", 20));
@@ -125,9 +119,9 @@ public final class EngineService implements AutoCloseable {
                 synchronized (originalLock) { value = originals.get(id); }
                 if (value == null) {
                     var view = orders.get(id);
-                    if (view != null) value = new PlaceResult(view, List.of(), null);
+                    if (view == null) return report(Outcome.QUEUE_FULL, null, "幂等订单状态已过期", true, start);
+                    value = new PlaceResult(view, List.of(), null);
                 }
-                if (value == null) return report(Outcome.QUEUE_FULL, null, "幂等结果已过期，请使用新的客户端订单号", true, start);
                 return report(value.accepted() ? Outcome.SUCCESS : Outcome.BUSINESS_REJECTED,
                         value, value.reason(), true, start);
             } catch (InterruptedException ex) {
@@ -141,10 +135,11 @@ public final class EngineService implements AutoCloseable {
         }
         try {
             var future = enqueue(() -> core.place(cmd), r -> {
-                updateOrder(r.order().orderId());
-                updateTrades(r.trades());
+                updateOrder(core, r.order().orderId());
+                updateTrades(core, r.trades());
                 if (key != null) {
-                    cacheOriginal(r);
+                    var current = orders.getOrDefault(r.order().orderId(), r.order());
+                    cacheOriginal(new PlaceResult(current, r.trades(), r.reason()));
                     ids.complete(key, r.order().orderId());
                 }
             }, false, true);
@@ -158,7 +153,7 @@ public final class EngineService implements AutoCloseable {
     public SubmitResult<CancelResult> cancel(long id, String client) {
         long start = System.nanoTime();
         try {
-            var r = await(enqueue(() -> core.cancel(id, client), result -> updateOrder(id), true, false));
+            var r = await(enqueue(() -> core.cancel(id, client), result -> updateOrder(core, id), true, false));
             return report(r.cancelled() ? Outcome.SUCCESS : Outcome.BUSINESS_REJECTED, r, cancelReason(r.status()), false, start);
         } catch (Unavailable ex) { return report(ex.outcome(), null, ex.getMessage(), false, start); }
     }
@@ -198,7 +193,8 @@ public final class EngineService implements AutoCloseable {
         }
     }
     private <T> SubmitResult<T> report(Outcome outcome, T value, String reason, boolean duplicate, long start) {
-        metrics.record(outcome, System.nanoTime() - start);
+        boolean queued = !duplicate && outcome != Outcome.RATE_LIMITED && outcome != Outcome.QUEUE_FULL;
+        metrics.record(outcome, System.nanoTime() - start, queued);
         return new SubmitResult<>(outcome, value, reason, duplicate);
     }
 
@@ -283,10 +279,10 @@ public final class EngineService implements AutoCloseable {
             cancels.clear();
         }
     }
-    private void updateTrades(List<Trade> trades) {
+    private void updateTrades(TradingCore source, List<Trade> trades) {
         for (var t : trades) {
-            updateOrder(t.buyOrderId());
-            updateOrder(t.sellOrderId());
+            updateOrder(source, t.buyOrderId());
+            updateOrder(source, t.sellOrderId());
         }
         rememberTrades(trades);
     }
@@ -296,10 +292,20 @@ public final class EngineService implements AutoCloseable {
             if (recent.size() > 50) recent.removeLast();
         }
     }
-    private void updateOrder(long id) {
-        var view = core.order(id).orElse(null);
+    private void updateOrder(TradingCore source, long id) {
+        var view = source.order(id).orElse(null);
         if (view == null) return;
         orders.put(id, view);
+        // The engine thread maintains both caches. A quiet client ID can outlive the
+        // global terminal-order window, so keep its latest committed view with its key.
+        if (!originals.isEmpty()) {
+            synchronized (originalLock) {
+                var previous = originals.get(id);
+                if (previous != null && !previous.order().equals(view)) {
+                    originals.put(id, new PlaceResult(view, previous.trades(), previous.reason()));
+                }
+            }
+        }
         if (view.status().isTerminal() && terminal.add(id) && terminal.size() > KEEP) {
             long evicted = terminal.getFirst();
             terminal.removeFirst();
@@ -348,7 +354,10 @@ public final class EngineService implements AutoCloseable {
         return await(enqueue(() -> {
             var report = Reconciler.reconcile(journal.readAll(), books.postings(), core.accounts(), core.journalSequence());
             return new ReconResult(report, InjectionScore.of(injector.manifest(), report));
-        }, r -> latest = r, false, false));
+        }, r -> {
+            latest = r;
+            alerts.observeImmediate(AlertRule.RECONCILIATION, !r.report().clean(), System.currentTimeMillis() / 1000);
+        }, false, false));
     }
     public ReconResult latest() { return latest; }
     public double injectionRate() { return injector.rate(); }

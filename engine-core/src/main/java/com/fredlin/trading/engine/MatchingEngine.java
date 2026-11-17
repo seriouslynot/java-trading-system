@@ -26,10 +26,10 @@ public final class MatchingEngine {
             else if (c.clientOrderId() != null && !EngineLimits.validId(c.clientOrderId())) reason = "客户端订单号不合法";
             else if (c.side() == null) reason = "订单方向不能为空";
         }
-        if (reason != null) return new PlaceResult(OrderView.rejected(id, c, seq), List.of(), reason);
+        if (reason != null) return reject(id, c, seq, reason);
         var order = new Order(id, c, seq);
         var rejection = admission.admit(order.view());
-        if (rejection.isPresent()) return new PlaceResult(OrderView.rejected(id, c, seq), List.of(), rejection.get());
+        if (rejection.isPresent()) return reject(id, c, seq, rejection.get());
         List<Trade> trades = new ArrayList<>();
         reason = match(order, trades);
         return new PlaceResult(order.view(), trades, reason);
@@ -120,13 +120,19 @@ public final class MatchingEngine {
         if (quantity > EngineLimits.MAX_QUANTITY) return "数量超过上限";
         return null;
     }
-    private void remember(Order order) {
-        finished.put(order.id, order.view());
+    private PlaceResult reject(long id, NewOrder command, long seq, String reason) {
+        var view = OrderView.rejected(id, command, seq);
+        remember(view);
+        return new PlaceResult(view, List.of(), reason);
+    }
+    private void remember(Order order) { remember(order.view()); }
+    private void remember(OrderView view) {
+        finished.put(view.orderId(), view);
         if (finished.size() > EngineLimits.FINISHED_ORDERS_TO_KEEP) finished.pollFirstEntry();
     }
     private OrderView ownedFinished(long id, String client) {
         var known = finished.get(id);
-        return known != null && known.clientId().equals(client) ? known : null;
+        return known != null && known.status() != OrderStatus.REJECTED && known.clientId().equals(client) ? known : null;
     }
     public OptionalLong bestBid() { return best(Side.BUY); }
     public OptionalLong bestAsk() { return best(Side.SELL); }

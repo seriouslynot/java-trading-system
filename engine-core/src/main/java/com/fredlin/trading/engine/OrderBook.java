@@ -9,10 +9,11 @@ final class OrderBook {
 
     NavigableMap<Long, PriceLevel> levels(Side side) { return side == Side.BUY ? bids : asks; }
     Order get(long id) { return orders.get(id); }
-    boolean add(Order o) {
-        if (orders.putIfAbsent(o.id, o) != null) return false;
-        levels(o.command.side()).computeIfAbsent(o.price, p -> new PriceLevel()).add(o);
-        return true;
+    void add(Order order) {
+        if (order.remaining <= 0) throw new IllegalArgumentException("A resting order must have remaining quantity");
+        if (orders.putIfAbsent(order.id, order) != null)
+            throw new IllegalStateException("Duplicate order ID: " + order.id);
+        levels(order.command.side()).computeIfAbsent(order.price, price -> new PriceLevel()).add(order);
     }
     void remove(Order o) {
         var map = levels(o.command.side());

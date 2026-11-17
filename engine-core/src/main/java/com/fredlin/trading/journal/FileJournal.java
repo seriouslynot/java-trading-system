@@ -6,16 +6,24 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
+import java.util.function.LongConsumer;
 
 public final class FileJournal implements Journal {
     public enum FsyncPolicy { GROUP, EVERY_RECORD, OS_DEFAULT }
     private final Path path;
     private final FsyncPolicy policy;
+    private final LongConsumer forceNanos;
     private final FileChannel channel;
     private final Pending pending = new Pending();
     private final int discarded;
 
     public FileJournal(Path path, FsyncPolicy fsync) {
+        this(path, fsync, null);
+    }
+
+    /** Observes successful command forces. Tail repair is excluded. */
+    public FileJournal(Path path, FsyncPolicy fsync, LongConsumer forceNanos) {
+        this.forceNanos = forceNanos;
         this.path = path.toAbsolutePath();
         this.policy = Objects.requireNonNull(fsync);
         try {
@@ -41,7 +49,9 @@ public final class FileJournal implements Journal {
                     lineNumber++;
                     current = in.read();
                     try {
-                        JournalCodec.decode(line.toString(StandardCharsets.UTF_8));
+                        String record = line.toString(StandardCharsets.UTF_8);
+                        if (record.endsWith("\r")) record = record.substring(0, record.length() - 1);
+                        JournalCodec.decode(record);
                     } catch (JournalCorruptedException ex) {
                         if (current != -1) throw new JournalCorruptedException("日志第 " + lineNumber + " 行损坏", ex);
                         return truncate(offset);
@@ -68,7 +78,7 @@ public final class FileJournal implements Journal {
             if (policy == FsyncPolicy.GROUP) pending.writeBytes(data);
             else {
                 write(ByteBuffer.wrap(data));
-                if (policy == FsyncPolicy.EVERY_RECORD) channel.force(false);
+                if (policy == FsyncPolicy.EVERY_RECORD) force();
             }
         } catch (IOException ex) { throw new UncheckedIOException("日志追加失败", ex); }
     }
@@ -77,9 +87,18 @@ public final class FileJournal implements Journal {
         if (policy != FsyncPolicy.GROUP || pending.size() == 0) return;
         try {
             write(pending.buffer());
-            channel.force(false);
+            force();
             pending.reset();
         } catch (IOException ex) { throw new UncheckedIOException("日志落盘失败", ex); }
+    }
+    private void force() throws IOException {
+        if (forceNanos == null) {
+            channel.force(false);
+            return;
+        }
+        long started = System.nanoTime();
+        channel.force(false);
+        forceNanos.accept(System.nanoTime() - started);
     }
     private void write(ByteBuffer data) throws IOException {
         while (data.hasRemaining()) channel.write(data);

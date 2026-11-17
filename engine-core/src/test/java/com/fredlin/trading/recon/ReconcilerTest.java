@@ -42,5 +42,29 @@ class ReconcilerTest {
         assertEquals(0, r.score().missed());
         assertEquals(0, r.score().falsePositives());
     }
+    @Test void oneInjectedTradeAffectsFourPostingsAndCountsAsOneEvent() {
+        var books = new Books();
+        var injector = new AnomalyInjector(books, 1, 42);
+        PostingRules.forTrade(trade, 1).forEach(injector::accept);
+        var report = Reconciler.reconcile(log, books.postings(), 1);
+        var score = InjectionScore.of(injector.manifest(), report);
+        assertEquals(4, report.anomalies().size());
+        assertEquals(1, score.injected());
+        assertEquals(1, score.detected());
+        assertEquals(score.injectedByType(), score.detectedByType());
+        assertEquals(0, score.falsePositives());
+    }
+
+    @Test void fiveThousandMixedCommandsAreDeterministicAndDetectAllFaults() {
+        var first = ReconExperiment.run(5000, .01, 1);
+        assertEquals(first, ReconExperiment.run(5000, .01, 1));
+        assertEquals(5000, first.commands());
+        assertTrue(first.score().injected() > 0);
+        assertEquals(first.score().injected(), first.score().detected());
+        assertEquals(0, first.score().missed());
+        assertEquals(0, first.score().falsePositives());
+        assertEquals(first.score().injected() * 4, first.report().anomalies().size());
+    }
+
     @Test void noFalsePositivesWithNoInjection() { assertTrue(ReconExperiment.run(4000, 0, 1).report().clean()); }
 }

@@ -9,9 +9,9 @@ function Result({value}: {value: Recon | null | undefined}) {
   if (!value) return <p className="empty">尚未运行对账</p>
   const {report, score} = value
   return <>
-    <div className="summary"><Badge tone={report.anomalies.length ? 'bad' : 'good'}>{report.anomalies.length ? `${report.anomalies.length} 条差异` : '对账通过'}</Badge>
+    <div className="summary"><Badge tone={report.anomalies.length ? 'bad' : 'good'}>{report.anomalies.length ? `${report.anomalies.length} 条差异记录` : '对账通过'}</Badge>
       <span>截至 #{integer(report.uptoSeq)}</span><span>预期 / 实际：{integer(report.expectedPostings)} / {integer(report.actualPostings)}</span></div>
-    <p className="muted">注入 {score.injected} · 识别 {score.detected} · 漏报 {score.missed} · 误报 {score.falsePositives}</p>
+    <p className="muted">注入事件 {score.injected} · 识别 {score.detected} · 漏报 {score.missed} · 误报 {score.falsePositives} · 余额差异 {score.balanceAnomalies}</p>
     {report.anomalies.length > 0 && <div className="scroll"><table><thead><tr><th>差异</th><th>来源</th><th>序列号</th><th>账户</th><th>资产</th><th>预期</th><th>实际</th></tr></thead>
       <tbody>{report.anomalies.slice(0, 100).map((a, i) => <tr key={i}><td>{a.description}</td><td>{a.reference ?? '—'}</td><td>{a.journalSeq}</td><td>{a.accountId}</td><td>{a.asset}</td><td>{integer(a.expected)}</td><td>{integer(a.actual)}</td></tr>)}</tbody></table></div>}
     {report.anomalies.length > 100 && <p className="muted">仅显示前 100 条差异</p>}
@@ -59,9 +59,9 @@ export function LedgerPage({book}: {book?: Book}) {
       </table></div></section>
       <section className="panel"><h2>独立对账实验</h2>
         <form className="form" onSubmit={e => { e.preventDefault(); void run(async () => {
-          const r = await api.experiment(orders, experimentRate / 100, seed); setResult(r); return `实验完成：${r.trades} 笔成交`
+          const r = await api.experiment(orders, experimentRate / 100, seed); setResult(r); return `实验完成：${r.commands} 条命令，${r.trades} 笔成交`
         }) }}>
-          <label>订单数<input type="number" min="1" max="100000" required value={orders} onChange={e => setOrders(e.target.valueAsNumber)}/></label>
+          <label>命令数（约 80% 下单、20% 撤单）<input type="number" min="1" max="100000" required value={orders} onChange={e => setOrders(e.target.valueAsNumber)}/></label>
           <div className="row"><label>注入比例（%）<input type="number" min="0" max="100" step="any" required value={experimentRate} onChange={e => setExperimentRate(e.target.valueAsNumber)}/></label>
             <label>随机种子<input type="number" required value={seed} onChange={e => setSeed(e.target.valueAsNumber)}/></label></div>
           <button disabled={busy}>运行实验</button>

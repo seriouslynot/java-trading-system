@@ -1,6 +1,6 @@
 package com.fredlin.trading.journal;
 
-import com.fredlin.trading.engine.TimeInForce;
+import com.fredlin.trading.engine.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.*;
@@ -62,6 +62,37 @@ class JournalTest {
         try (var j = new FileJournal(path, FileJournal.FsyncPolicy.GROUP)) {
             assertEquals(1, j.discardedLines());
             assertEquals(expected, j.readAll());
+        }
+    }
+    @Test void keepsCrLfRecordsAndAppendsLfRecords() throws Exception {
+        var path = tmp.resolve("windows.log");
+        var first = new JournalRecord.Deposit(1, "A", 12, 3);
+        var next = new JournalRecord.Deposit(2, "B", 15, 4);
+        Files.writeString(path, JournalCodec.encode(first) + "\r\n");
+        try (var j = new FileJournal(path, FileJournal.FsyncPolicy.GROUP)) {
+            assertEquals(0, j.discardedLines());
+            assertEquals(List.of(first), j.readAll());
+            j.append(next);
+            j.flush();
+        }
+        try (var j = new FileJournal(path, FileJournal.FsyncPolicy.GROUP)) {
+            assertEquals(0, j.discardedLines());
+            assertEquals(List.of(first, next), j.readAll());
+        }
+    }
+
+    @Test void eachRecordRoundTripsAndRejectsTampering() {
+        var order = new NewOrder("A", "DEMO", Side.BUY, 100, 5, "client-1", TimeInForce.IOC);
+        var trade = new Trade(1, 2, "DEMO", 95, 3, 2, "A", 1, "B", Side.BUY);
+        List<JournalRecord> records = List.of(
+                new JournalRecord.Deposit(1, "A", 1000, 0),
+                new JournalRecord.Place(2, order, 2, OrderStatus.CANCELLED, "IOC", List.of(trade)),
+                new JournalRecord.Cancel(3, 3, "B", CancelStatus.CANCELLED),
+                new JournalRecord.Modify(4, 3, "B", 99, 6, ModifyStatus.REJECTED, List.of()));
+        for (var record : records) {
+            String encoded = JournalCodec.encode(record);
+            assertEquals(record, JournalCodec.decode(encoded));
+            assertThrows(JournalCorruptedException.class, () -> JournalCodec.decode("9" + encoded.substring(1)));
         }
     }
 }

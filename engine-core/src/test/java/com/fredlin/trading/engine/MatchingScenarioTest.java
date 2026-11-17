@@ -48,11 +48,16 @@ class MatchingScenarioTest {
         assertEquals(amended.sequence(), amended.order().sequence());
         assertEquals(b.orderId(), e.openOrders(BUY).getFirst().orderId());
     }
-    @Test void rejectConsumesIdsButIsNotQueryable() {
+    @Test void rejectedOrderIsQueryableButCannotBeCancelled() {
         var r = p("A", BUY, 0, 1);
         assertEquals(REJECTED, r.order().status());
         assertEquals("价格必须大于 0", r.reason());
-        assertTrue(e.order(r.order().orderId()).isEmpty());
+        assertEquals(r.order(), e.order(r.order().orderId()).orElseThrow());
+        assertEquals(0, r.order().cancelledQuantity());
+        assertEquals(0, r.order().remainingQuantity());
+        assertEquals(0, r.order().filledQuantity());
+        assertEquals(CancelStatus.NOT_FOUND, e.cancel(r.order().orderId(), "A").status());
+        assertEquals(ModifyStatus.NOT_FOUND, e.modify(r.order().orderId(), "A", 1, 1).status());
         assertEquals(r.order().orderId() + 1, p("A", BUY, 1, 1).order().orderId());
     }
 }
