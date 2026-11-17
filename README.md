@@ -8,7 +8,7 @@ The original project took approximately two to three months to develop. This rep
 
 ## Architecture
 
-- `engine-core` implements price-time matching, immediate-or-cancel orders, amendments, cash and inventory reservations, settlement, reconciliation, and journal replay in pure Java.
+- [`engine-core`](engine-core) implements price-time matching, reservations, settlement, reconciliation, and journal replay in pure Java. Start with [`MatchingEngine.java`](engine-core/src/main/java/com/fredlin/trading/engine/MatchingEngine.java) or see the [core source index](engine-core/README.md).
 - `app` provides the REST API, idempotency, rate limiting, and a bounded queue with optional cancel priority. One engine thread owns the order book and ledger. With group commit enabled, it forces the journal before acknowledging orders and publishing updated read snapshots.
 - `frontend` provides trading, ledger and reconciliation, and operations dashboards. It polls the read APIs once per second.
 
